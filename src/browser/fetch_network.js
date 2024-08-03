@@ -92,12 +92,72 @@ FetchNetworkAdapter.prototype.send = function(data)
             if(this.tcp_conn[tuple]) {
                 dbg_log("SYN to already opened port", LOG_FETCH);
             }
-            this.tcp_conn[tuple] = new TCPConnection();
-            this.tcp_conn[tuple].state = TCP_STATE_SYN_RECEIVED;
-            this.tcp_conn[tuple].net = this;
-            this.tcp_conn[tuple].on_data = TCPConnection.prototype.on_data_http;
-            this.tcp_conn[tuple].tuple = tuple;
-            this.tcp_conn[tuple].accept(packet);
+            const tcp_conn = new TCPConnection();
+            tcp_conn.state = TCP_STATE_SYN_RECEIVED;
+            tcp_conn.net = this;
+            tcp_conn.tuple = tuple;
+            this.tcp_conn[tuple] = tcp_conn;
+
+            tcp_conn.on_data = async (data) => {
+                tcp_conn.read = tcp_conn.read || "";
+                tcp_conn.read += new TextDecoder().decode(data);
+                if(tcp_conn.read && tcp_conn.read.indexOf("\r\n\r\n") !== -1) {
+                    let offset = tcp_conn.read.indexOf("\r\n\r\n");
+                    let headers = tcp_conn.read.substring(0, offset).split(/\r\n/);
+                    let data = tcp_conn.read.substring(offset + 4);
+                    tcp_conn.read = "";
+
+                    let first_line = headers[0].split(" ");
+                    let target = new URL("http://host" + first_line[1]);
+                    if(/^https?:/.test(first_line[1])) {
+                        target = new URL(first_line[1]);
+                    }
+                    let req_headers = new Headers();
+                    for(let i = 1; i < headers.length; ++i) {
+                        let parts = headers[i].split(": ");
+                        let key =  parts[0].toLowerCase();
+                        let value = parts[1];
+                        if( key === "host" ) target.host = value;
+                        else if( key.length > 1 ) req_headers.set(parts[0], value);
+                    }
+
+                    dbg_log("HTTP Dispatch: " + target.href, LOG_FETCH);
+                    tcp_conn.name = target.href;
+                    let opts = {
+                        method: first_line[0],
+                        headers: req_headers,
+                    };
+                    if(["put", "post"].indexOf(opts.method.toLowerCase()) !== -1) {
+                        opts.body = data;
+                    }
+                    const [resp, ab] = await tcp_conn.net.fetch(target.href, opts);
+                    const lines = [
+                        `HTTP/1.1 ${resp.status} ${resp.statusText}`,
+                        "connection: Closed",
+                        "content-length: " + ab.byteLength
+                    ];
+
+                    lines.push("x-was-fetch-redirected: " + String(resp.redirected));
+                    lines.push("x-fetch-resp-url: " + String(resp.url));
+
+                    resp.headers.forEach(function (value, key) {
+                        if([
+                            "content-encoding", "connection", "content-length", "transfer-encoding"
+                        ].indexOf(key.toLowerCase()) === -1 ) {
+                            lines.push(key + ": " + value);
+                        }
+                    });
+
+                    lines.push("");
+                    lines.push("");
+
+                    tcp_conn.write(new TextEncoder().encode(lines.join("\r\n")));
+                    tcp_conn.write(new Uint8Array(ab));
+                }
+            };
+
+            tcp_conn.accept(packet);
+
             return;
         }
 

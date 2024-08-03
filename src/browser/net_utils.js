@@ -794,64 +794,6 @@ TCPConnection.prototype.process = function(packet) {
     this.pump();
 };
 
-TCPConnection.prototype.on_data_http = async function(data) {
-    this.read = this.read || "";
-    this.read += new TextDecoder().decode(data);
-    if(this.read && this.read.indexOf("\r\n\r\n") !== -1) {
-        let offset = this.read.indexOf("\r\n\r\n");
-        let headers = this.read.substring(0, offset).split(/\r\n/);
-        let data = this.read.substring(offset + 4);
-        this.read = "";
-
-        let first_line = headers[0].split(" ");
-        let target = new URL("http://host" + first_line[1]);
-        if(/^https?:/.test(first_line[1])) {
-            target = new URL(first_line[1]);
-        }
-        let req_headers = new Headers();
-        for(let i = 1; i < headers.length; ++i) {
-            let parts = headers[i].split(": ");
-            let key =  parts[0].toLowerCase();
-            let value = parts[1];
-            if( key === "host" ) target.host = value;
-            else if( key.length > 1 ) req_headers.set(parts[0], value);
-        }
-
-        dbg_log("HTTP Dispatch: " + target.href, LOG_FETCH);
-        this.name = target.href;
-        let opts = {
-            method: first_line[0],
-            headers: req_headers,
-        };
-        if(["put", "post"].indexOf(opts.method.toLowerCase()) !== -1) {
-            opts.body = data;
-        }
-        const [resp, ab] = await this.net.fetch(target.href, opts);
-        const lines = [
-            `HTTP/1.1 ${resp.status} ${resp.statusText}`,
-            "connection: Closed",
-            "content-length: " + ab.byteLength
-        ];
-
-        lines.push("x-was-fetch-redirected: " + String(resp.redirected));
-        lines.push("x-fetch-resp-url: " + String(resp.url));
-
-        resp.headers.forEach(function (value, key) {
-            if([
-                "content-encoding", "connection", "content-length", "transfer-encoding"
-            ].indexOf(key.toLowerCase()) === -1 ) {
-                lines.push(key + ": " + value);
-            }
-        });
-
-        lines.push("");
-        lines.push("");
-
-        this.write(new TextEncoder().encode(lines.join("\r\n")));
-        this.write(new Uint8Array(ab));
-    }
-};
-
 /**
  * @param {Uint8Array} data
  */
