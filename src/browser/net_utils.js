@@ -260,7 +260,8 @@ function parse_udp(data, o) {
         dport: view.getUint16(2),
         len: view.getUint16(4),
         checksum: view.getUint16(6),
-        data_s: new TextDecoder().decode(data.subarray(8))
+        data_s: new TextDecoder().decode(data.subarray(8)),
+        data: data.subarray(8)
     };
 
     //dbg_assert(udp.data.length + 8 == udp.len);
@@ -835,45 +836,6 @@ TCPConnection.prototype.pump = function() {
 // https://stackoverflow.com/questions/4460586/javascript-regular-expression-to-check-for-ip-addresses
 function validate_IP_address(ipaddress) {
     return /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(ipaddress);
-}
-
-// DNS over HTTPS fetch, recursively fetch the A record until the first result is an IPv4
-async function dohdns(q) {
-    const req = await fetch(`${DOH_SERVER}?name=${q.name.join(".")}&type=${q.type}`, {headers: [["accept", "application/dns-json"]]});
-    if(req.status === 200) {
-        const res = await req.json();
-        if(res.Answer) {
-            if(validate_IP_address(res.Answer[0].data)) {
-                return res;
-            } else {
-                return await dohdns({name: res.Answer[0].data.split("."), type: q.type});
-            }
-        }
-        return { // if theres an error, Naively return localhost
-            "Status": 0,
-            "TC": false,
-            "RD": true,
-            "RA": true,
-            "AD": true,
-            "CD": false,
-            "Question": [
-                {
-                    "name": q.name.join("."),
-                    "type": 1
-                }
-            ],
-            "Answer": [
-                {
-                    "name": q.name.join("."),
-                    "type": 1,
-                    "TTL": 600,
-                    "data": "127.0.0.1"
-                }
-            ]
-        };
-    } else {
-        dbg_log("DNS Server returned error code: " + await req.text(), LOG_NET);
-    }
 }
 
 function udp_echo(adapter, packet) {

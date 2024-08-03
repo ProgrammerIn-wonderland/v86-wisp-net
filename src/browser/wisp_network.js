@@ -280,43 +280,9 @@ WispNetworkAdapter.prototype.send = function(data)
                 dest: packet.ipv4.src,
             };
             reply.udp = { sport: 53, dport: packet.udp.sport };
-
-            let answers = [];
-            let flags = 0x8000; //Response,
-            flags |= 0x0180; // Recursion
-            // flags |= 0x0400; Authoritative
-            for(let i = 0; i < packet.dns.questions.length; ++i) {
-                let q = packet.dns.questions[i];
-                // Sometimes this results in no answer at all, like if dohdns crashes, but UDP is unreliable in nature so this shouldn't be that big of an issue
-                const res = await dohdns(q);
-                switch(q.type){
-                    case 1: // A recrod
-
-                        // for (const ans in res.Answer) {    // v86 DNS server crashes and burns with multiple answers, not quite sure why
-                        if(res?.Answer && res.Answer[0]) {
-                            const ans = res.Answer[0];
-                            answers.push({
-                                name: ans.name.split("."),
-                                type: ans.type,
-                                class: q.class,
-                                ttl: ans.TTL,
-                                data: ans.data.split(".")
-                            });
-                        }
-
-                        // }
-
-                        break;
-                    default:
-                }
-            }
-
-            reply.dns = {
-                id: packet.dns.id,
-                flags: flags,
-                questions: packet.dns.questions,
-                answers: answers
-            };
+            const fetchURL = "https://cloudflare-dns.com/dns-query";
+            const result = await ((await fetch(fetchURL, {method: "POST", headers: [["content-type", "application/dns-message"]], body: packet.udp.data})).arrayBuffer());
+            reply.udp.data = new Uint8Array(result);
             this.receive(make_packet(reply));
 
         })();
