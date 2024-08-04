@@ -1,4 +1,5 @@
 "use strict";
+const DEFAULT_DOH_SERVER = "cloudflare-dns.com";
 
 /**
  * @constructor
@@ -18,7 +19,7 @@ function WispNetworkAdapter(wisp_url, bus, config)
     this.vm_ip = new Uint8Array((config.vm_ip || "192.168.86.100").split(".").map(function(x) { return parseInt(x, 10); }));
     this.masquerade = config.masquerade === undefined || !!config.masquerade;
     this.vm_mac = new Uint8Array(6);
-
+    this.doh_server =  config.doh_server || DEFAULT_DOH_SERVER;
     this.tcp_conn = {};
 
     this.bus.register("net" + this.id + "-mac", function(mac) {
@@ -187,6 +188,7 @@ WispNetworkAdapter.prototype.send = function(data)
 {
     let packet = {};
     parse_eth(data, packet);
+
     if(packet.tcp) {
         let reply = {};
         reply.eth = { ethertype: ETHERTYPE_IPV4, src: this.router_mac, dest: packet.eth.src };
@@ -280,8 +282,7 @@ WispNetworkAdapter.prototype.send = function(data)
                 dest: packet.ipv4.src,
             };
             reply.udp = { sport: 53, dport: packet.udp.sport };
-            const fetchURL = "https://cloudflare-dns.com/dns-query";
-            const result = await ((await fetch(fetchURL, {method: "POST", headers: [["content-type", "application/dns-message"]], body: packet.udp.data})).arrayBuffer());
+            const result = await ((await fetch(`https://${this.doh_server}/dns-query`, {method: "POST", headers: [["content-type", "application/dns-message"]], body: packet.udp.data})).arrayBuffer());
             reply.udp.data = new Uint8Array(result);
             this.receive(make_packet(reply));
 

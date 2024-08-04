@@ -1,5 +1,3 @@
-const DOH_SERVER = "https://dns.google/resolve";
-
 // https://www.iana.org/assignments/ieee-802-numbers/ieee-802-numbers.xhtml
 const ETHERTYPE_IPV4 = 0x0800;
 const ETHERTYPE_ARP = 0x0806;
